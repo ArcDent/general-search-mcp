@@ -1,0 +1,44 @@
+{
+  "name": "general-search-mcp",
+  "version": "0.1.0",
+  "description": "Unified MCP server: web search via Tavily (search layer) and web crawling via Firecrawl (crawl layer)",
+  "type": "module",
+  "bin": {
+    "general-search-mcp": "build/index.js"
+  },
+  "files": [
+    "build"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc && node -e \"import('fs').then(fs => fs.chmodSync('build/index.js', '755'))\"",
+    "watch": "tsc --watch",
+    "start": "node build/index.js",
+    "list-tools": "node build/index.js --list-tools",
+    "inspector": "npx @modelcontextprotocol/inspector build/index.js",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "tavily",
+    "firecrawl",
+    "web-search",
+    "web-crawl",
+    "scrape",
+    "search"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@mendable/firecrawl-js": "^4.25.2",
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "axios": "^1.7.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}
