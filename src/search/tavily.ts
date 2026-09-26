@@ -45,11 +45,11 @@ function client(): AxiosInstance {
       ...(SEARCH_KEYLESS
         ? {
             "X-Tavily-Access-Mode": "keyless",
-            "X-Client-Source": "general-search-mcp-keyless",
+            "X-Client-Source": "gsearch-keyless",
           }
         : {
             Authorization: `Bearer ${TAVILY_API_KEY}`,
-            "X-Client-Source": "general-search-mcp",
+            "X-Client-Source": "gsearch",
           }),
       "X-Session-Id": SESSION_ID,
       ...(TAVILY_HUMAN_ID ? { "X-Human-Id": TAVILY_HUMAN_ID } : {}),

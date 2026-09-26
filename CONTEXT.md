@@ -1,4 +1,4 @@
-# general-search-mcp
+# gsearch
 
 A single MCP server that unifies web search and web crawling behind one tool
 surface: a Search Layer powered by Tavily and a Crawl Layer powered by Firecrawl.

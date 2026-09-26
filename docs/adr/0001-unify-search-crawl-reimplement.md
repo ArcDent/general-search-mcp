@@ -4,7 +4,7 @@ status: accepted
 
 # Unify search and crawl by reimplementing, not proxying
 
-general-search-mcp exposes a Search Layer (Tavily) and a Crawl Layer (Firecrawl)
+gsearch exposes a Search Layer (Tavily) and a Crawl Layer (Firecrawl)
 from one process. We build it as a self-contained server that calls the Tavily
 REST API directly (via axios) and the Firecrawl JS SDK directly
 (`@mendable/firecrawl-js`), rather than spawning and proxying the existing

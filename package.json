@@ -1,10 +1,10 @@
 {
-  "name": "general-search-mcp",
+  "name": "gsearch",
   "version": "0.1.0",
   "description": "Unified MCP server: web search via Tavily (search layer) and web crawling via Firecrawl (crawl layer)",
   "type": "module",
   "bin": {
-    "general-search-mcp": "build/index.js"
+    "gsearch": "build/index.js"
   },
   "files": [
     "build"

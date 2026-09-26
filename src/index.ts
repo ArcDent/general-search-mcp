@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * general-search-mcp entry point.
+ * gsearch entry point.
  *
  * Registers the Search Layer (Tavily) and Crawl Layer (Firecrawl) tools on a
  * single MCP server and serves them over stdio. Run with `--list-tools` to
@@ -61,7 +61,7 @@ server.setRequestHandler(
 );
 
 server.onerror = (error) => {
-  console.error("[general-search-mcp] MCP error:", error);
+  console.error(`[${SERVER_NAME}] MCP error:`, error);
 };
 
 process.on("SIGINT", async () => {
@@ -73,13 +73,13 @@ async function main(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error(
-    `[general-search-mcp] running on stdio — search layer: ${
+    `[${SERVER_NAME}] running on stdio — search layer: ${
       SEARCH_KEYLESS ? "keyless" : "keyed"
     }, crawl layer: ${CRAWL_KEYLESS ? "keyless" : "keyed"}`,
   );
 }
 
 main().catch((error) => {
-  console.error("[general-search-mcp] fatal:", error);
+  console.error(`[${SERVER_NAME}] fatal:`, error);
   process.exit(1);
 });

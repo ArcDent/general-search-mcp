@@ -1,4 +1,4 @@
-# general-search-mcp
+# gsearch
 
 A single [Model Context Protocol](https://modelcontextprotocol.io) server that
 unifies web **search** and web **crawling** behind one tool surface:
@@ -56,9 +56,9 @@ Add to your client's MCP config (example for Cursor / Claude Desktop):
 ```json
 {
   "mcpServers": {
-    "general-search": {
+    "gsearch": {
       "command": "node",
-      "args": ["/absolute/path/to/general-search-mcp/build/index.js"],
+      "args": ["/absolute/path/to/gsearch/build/index.js"],
       "env": {
         "TAVILY_API_KEY": "tvly-...",
         "FIRECRAWL_API_KEY": "fc-..."

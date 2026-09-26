@@ -10,7 +10,7 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-export const SERVER_NAME = "general-search-mcp";
+export const SERVER_NAME = "gsearch";
 export const SERVER_VERSION = "0.1.0";
 
 // Search layer (Tavily)
