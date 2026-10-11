@@ -17,18 +17,28 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import {
   CRAWL_KEYLESS,
+  LUDAO_ENABLED,
+  LUDAO_TOKEN,
   SEARCH_KEYLESS,
   SERVER_NAME,
   SERVER_VERSION,
 } from "./config.js";
 import { crawlHandlers, crawlTools } from "./crawl/firecrawl.js";
+import { libraryHandlers, libraryTools } from "./library/ludao.js";
 import { searchHandlers, searchTools } from "./search/tavily.js";
 import type { ToolDefinition, ToolHandler } from "./types.js";
 
-const tools: ToolDefinition[] = [...searchTools, ...crawlTools];
+// Library Layer is opt-in: LUDAO_ENABLED gates its tools at registration
+// time, so both `--list-tools` and listTools read the same array.
+const tools: ToolDefinition[] = [
+  ...searchTools,
+  ...crawlTools,
+  ...(LUDAO_ENABLED ? libraryTools : []),
+];
 const handlers: Record<string, ToolHandler> = {
   ...searchHandlers,
   ...crawlHandlers,
+  ...(LUDAO_ENABLED ? libraryHandlers : {}),
 };
 
 if (process.argv.includes("--list-tools")) {
@@ -75,7 +85,9 @@ async function main(): Promise<void> {
   console.error(
     `[${SERVER_NAME}] running on stdio — search layer: ${
       SEARCH_KEYLESS ? "keyless" : "keyed"
-    }, crawl layer: ${CRAWL_KEYLESS ? "keyless" : "keyed"}`,
+    }, crawl layer: ${CRAWL_KEYLESS ? "keyless" : "keyed"}, library layer: ${
+      LUDAO_ENABLED ? (LUDAO_TOKEN ? "keyed" : "guest") : "disabled"
+    }`,
   );
 }
 
