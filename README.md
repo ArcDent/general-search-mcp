@@ -35,20 +35,24 @@
 
 ## 项目简介
 
-gsearch 是一个基于 [Model Context Protocol](https://modelcontextprotocol.io) 的单一服务器，把**网页搜索**、**网页抓取**与**学习资料检索**三类能力合并到同一套工具接口下：搜索层由 [Tavily](https://tavily.com) 驱动，抓取层由 [Firecrawl](https://firecrawl.dev) 驱动，Library Layer 由鹭岛书阁（[Ludao](https://xmu.vintces.icu)）驱动。
+gsearch 是一个基于 [Model Context Protocol](https://modelcontextprotocol.io) 的单一服务器，把三类能力合并到同一套工具接口：
 
-搜索层与抓取层默认暴露；Library Layer 按 [ADR-0002](docs/adr/0002-library-layer-opt-in-ludao.md) 的决策仅在 `LUDAO_ENABLED` 显式开启后注册——**缺省不暴露**，其工具一律带 `ludao_` 前缀。
+| 能力 | 引擎 | 默认状态 |
+|:-----|:-----|:---------|
+| **网页搜索** | [Tavily](https://tavily.com) | 开启 |
+| **网页抓取** | [Firecrawl](https://firecrawl.dev) | 开启 |
+| **学习资料检索** | 鹭岛书阁（[Ludao](https://xmu.vintces.icu)） | 关闭，`LUDAO_ENABLED` 开启后生效 |
 
-它直接调用 Tavily REST API、Firecrawl JS SDK 与鹭岛书阁 REST API，以**一个自包含进程**运行——不代理、不 fork 独立的 `tavily-mcp` 或 `firecrawl-mcp` 服务。
+服务器是一个自包含进程，直接调用三个引擎的 API，不代理、不 fork 独立的 `tavily-mcp` 或 `firecrawl-mcp` 服务。
 
 > [!NOTE]
-> **为什么重写而不是代理**：同时跑 `tavily-mcp` 和 `firecrawl-mcp` 需要两个进程、两条 stdio 通道和两份配置。本项目按 [ADR-0001](docs/adr/0001-unify-search-crawl-reimplement.md) 的决策直接实现，统一工具命名、参数清洗与输出截断，代价是自己维护两个引擎的调用细节。
+> **为什么重写而不是代理**：同时跑 `tavily-mcp` 和 `firecrawl-mcp` 需要两个进程、两条 stdio 通道和两份配置。本项目直接实现（[ADR-0001](docs/adr/0001-unify-search-crawl-reimplement.md)），统一工具命名、参数清洗与输出截断。
 
 ### 三层独立降级
 
-搜索层与抓取层**各自独立判断有无凭据**：可以一个用密钥、一个无密钥同时运行，互不影响。缺少密钥的层自动进入 keyless 模式（有速率限制），服务器照常启动。
+搜索层与抓取层各自判断有无密钥，可以一个有密钥、一个无密钥同时运行，互不影响。缺密钥的层自动进入 keyless 模式（有速率限制），服务器照常启动。
 
-Library Layer **没有 keyless 变体**：它要么不暴露（`LUDAO_ENABLED` 关闭），要么在开启后运行 Guest mode——无令牌时以访客身份访问鹭岛书阁的公开资料（可搜索、可下载，非公开资料不可见），令牌无效或已吊销时同样降级为访客行为而不是报错。开关与令牌只在 `config.ts` 解析一次，令牌值不会写入任何日志或工具输出。
+Library Layer 没有 keyless 模式：要么不暴露（`LUDAO_ENABLED` 关闭），要么在开启后以访客身份访问鹭岛书阁的公开资料（可搜索、可下载）。令牌无效或已吊销时同样降级为访客，不会报错。
 
 ---
 
