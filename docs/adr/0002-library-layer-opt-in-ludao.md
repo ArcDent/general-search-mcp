@@ -1,6 +1,10 @@
 ---
-status: accepted
+status: superseded
 ---
+
+> Superseded on 2026-11-21: Ludao support no longer ships on `main`. The
+> Library Layer lives on the `ludao` branch, which follows `main` by merge; this
+> record stays here as history and still describes that branch.
 
 # The Library Layer is opt-in and prefixes its tools with `ludao_`
 

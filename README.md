@@ -19,13 +19,12 @@
 ![MCP](https://img.shields.io/badge/MCP-Protocol-8A2BE2?style=for-the-badge)
 ![Search](https://img.shields.io/badge/Search-Tavily-7C3AED?style=for-the-badge)
 ![Crawl](https://img.shields.io/badge/Crawl-Firecrawl-F97316?style=for-the-badge)
-![Library](https://img.shields.io/badge/Library-Ludao-0D9488?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue?style=for-the-badge)
 
-**✨ 一个进程，三层引擎：搜索 / 抓取 / Library Layer ✨**
+**✨ 一个进程，5 个工具，搜索与抓取合二为一 ✨**
 
-基于 MCP stdio 的单一服务器，直连 Tavily REST API、Firecrawl JS SDK 与鹭岛书阁 REST API（Library Layer 默认不暴露，`LUDAO_ENABLED` 开启后生效）
+基于 MCP stdio 的单一服务器，直连 Tavily REST API 与 Firecrawl JS SDK
 
 [✨ 功能特性](#-功能特性) • [🛠 MCP 工具](#-mcp-工具) • [🚀 快速开始](#-快速开始) • [🔌 接入客户端](#-接入-mcp-客户端) • [🔑 环境变量](#-环境变量)
 
@@ -35,20 +34,21 @@
 
 ## 项目简介
 
-gsearch 是一个基于 [Model Context Protocol](https://modelcontextprotocol.io) 的单一服务器，把三类能力合并到同一套工具接口：
+gsearch 是一个基于 [Model Context Protocol](https://modelcontextprotocol.io) 的单一服务器，把两类能力合并到同一套工具接口：
 
 | 能力 | 引擎 | 默认状态 |
 |:-----|:-----|:---------|
 | **网页搜索** | [Tavily](https://tavily.com) | 开启 |
 | **网页抓取** | [Firecrawl](https://firecrawl.dev) | 开启 |
-| **学习资料检索** | 鹭岛书阁（[Ludao](https://xmu.vintces.icu)） | 关闭，`LUDAO_ENABLED` 开启后生效 |
 
-服务器是一个自包含进程，直接调用三个引擎的 API，不代理、不 fork 独立的 `tavily-mcp` 或 `firecrawl-mcp` 服务。
+服务器是一个自包含进程，直接调用两个引擎的 API，不代理、不 fork 独立的 `tavily-mcp` 或 `firecrawl-mcp` 服务。
+
+鹭岛书阁的资料检索与下载已移到 [`ludao` 分支](https://github.com/ArcDent/general-search-mcp/tree/ludao)，主分支不再包含，需要时切换到该分支使用。
 
 > [!NOTE]
 > **为什么重写而不是代理**：同时跑 `tavily-mcp` 和 `firecrawl-mcp` 需要两个进程、两条 stdio 通道和两份配置。本项目直接实现（[ADR-0001](docs/adr/0001-unify-search-crawl-reimplement.md)），统一工具命名、参数清洗与输出截断。
 
-### 三层独立降级
+### 双层独立降级
 
 搜索层与抓取层各自判断有无密钥，可以一个有密钥、一个无密钥同时运行，互不影响。缺密钥的层自动进入 keyless 模式（有速率限制），服务器照常启动。
 
@@ -63,8 +63,6 @@ gsearch 是一个基于 [Model Context Protocol](https://modelcontextprotocol.io
 - 同一账号下的多个 key 通常共享额度，轮换只能叠加不同账号的额度。
 - 多个 key 只写在本服务器的 `env` 或项目的 `.env` 里，不要导出到全局 shell 环境，否则同一终端里其他读 `FIRECRAWL_API_KEY` 的工具会读到整串逗号分隔的值。
 
-Library Layer 没有 keyless 模式：要么不暴露（`LUDAO_ENABLED` 关闭），要么在开启后以访客身份访问鹭岛书阁的公开资料（可搜索、可下载）。令牌无效或已吊销时同样降级为访客，不会报错。
-
 ---
 
 ## 📁 项目结构
@@ -78,10 +76,8 @@ gsearch/
 │   ├── types.ts            # 共享工具契约 + cleanParams / truncate
 │   ├── search/
 │   │   └── tavily.ts       # 搜索层：search、extract
-│   ├── crawl/
-│   │   └── firecrawl.ts    # 抓取层：scrape、crawl、map
-│   └── library/
-│       └── ludao.ts        # Library Layer（可选）：ludao_search、ludao_resource、ludao_download
+│   └── crawl/
+│       └── firecrawl.ts    # 抓取层：scrape、crawl、map
 ├── test/                   # node:test 测试，跑编译后的 build/
 ├── docs/
 │   └── adr/                # 架构决策记录
@@ -107,12 +103,11 @@ gsearch/
 
 | 功能 | 描述 |
 |:-----|:-----|
-| **MCP 工具** | 基础 5 个：搜索 2 个（`search`、`extract`）+ 抓取 3 个（`scrape`、`crawl`、`map`）；`LUDAO_ENABLED` 开启 Library Layer 后共 8 个，再加资料 3 个（`ludao_search`、`ludao_resource`、`ludao_download`） |
-| **单进程自包含** | 直连三个引擎，不代理外部 MCP 服务，没有第二条 stdio 通道 |
+| **5 个 MCP 工具** | 搜索 2 个（`search`、`extract`）+ 抓取 3 个（`scrape`、`crawl`、`map`） |
+| **单进程自包含** | 直连两个引擎，不代理外部 MCP 服务，没有第二条 stdio 通道 |
 | **标准 stdio 传输** | MCP over stdio，兼容 Cursor / Claude Desktop 等主流客户端 |
-| **`--list-tools`** | 一条命令列出当前注册的全部工具与说明，不必先接客户端；门控开关增减后列表随之变化 |
-| **Library Layer 可选** | Library Layer 由鹭岛书阁（Ludao）驱动，按 `LUDAO_ENABLED` 显式开启，缺省不暴露；无令牌以访客身份访问公开资料 |
-| **分层独立降级** | 搜索层与抓取层各自判断密钥，可一个 keyed 一个 keyless；Library Layer 无 keyless 变体，只在「不暴露」与 Guest mode 间切换 |
+| **`--list-tools`** | 一条命令列出全部工具与说明，不必先接客户端 |
+| **双层独立降级** | 搜索层与抓取层各自判断密钥，可一个 keyed 一个 keyless |
 | **多 key 轮换** | 每层可配多个 key，被拒绝或额度用完时自动换下一个；`KEY_ROTATION` 选顺序消耗或轮流取用 |
 
 ### 工程细节
@@ -135,12 +130,6 @@ gsearch/
 | `scrape` | Firecrawl | 抓取单个已知页面为 markdown 等格式 | `url` |
 | `crawl` | Firecrawl | 从根 URL 遍历站点，轮询至任务完成 | `url` |
 | `map` | Firecrawl | 枚举站点可发现的 URL，不取正文 | `url` |
-| `ludao_search` | Ludao | 搜索鹭岛书阁资料，默认只返资料（resource id、课程/标题、大小、评分） | `q` |
-| `ludao_resource` | Ludao | 按 resource id 读一份资料的元数据与评分汇总 | `resource_id` |
-| `ludao_download` | Ludao | 按 resource id 把资料下载到本地磁盘，多 part 按序拼接 | `resource_id` |
-
-> [!NOTE]
-> Library Layer 三工具仅在 `LUDAO_ENABLED` 开启后注册；关闭时调用其名字会得到 unknown tool 错误。三者均为只读，站点不提供任何写操作入口。
 
 ### 常用可选参数
 
@@ -160,11 +149,6 @@ gsearch/
 | `crawl` | `sitemap` | `include` / `skip` / `only` |
 | `crawl` | `includePaths` / `excludePaths` | 正则路径过滤，如 `/docs/.*` |
 | `map` | `search` | 按关键词过滤发现的 URL |
-| `ludao_search` | `result_type` | `resource`（默认）/ `category`（返分类而非资料） |
-| `ludao_search` | `within` | 分类 id，限定该分类子树 |
-| `ludao_search` | `tag` | 单个标签编码（T1–T9，如 `T1` 真题试卷）；每次搜索只接受一个 |
-| `ludao_search` | `page` | 页码，默认 1；每页固定 20 条，上限 50 页 |
-| `ludao_download` | `output_dir` | 本次下载目录，缺省用 `LUDAO_DOWNLOAD_DIR`（再回落 `./downloads`） |
 
 列出全部工具与说明：
 
@@ -204,9 +188,7 @@ npm run build
       "args": ["/absolute/path/to/gsearch/build/index.js"],
       "env": {
         "TAVILY_API_KEY": "tvly-...",
-        "FIRECRAWL_API_KEY": "fc-...",
-        "LUDAO_ENABLED": "true",
-        "LUDAO_TOKEN": "ludao-..."
+        "FIRECRAWL_API_KEY": "fc-..."
       }
     }
   }
@@ -214,24 +196,23 @@ npm run build
 ```
 
 > [!NOTE]
-> **凭据放 `.env`，客户端配置里不写密钥**：服务器用 dotenv 读取**工作目录下**的 `.env`（已被 `.gitignore` 忽略）。要让令牌只留在 `.env`，就把启动命令固定到仓库目录——工作目录确定了 `.env` 才会被稳定加载，例如：
+> **凭据放 `.env`，客户端配置里不写密钥**：服务器用 dotenv 读取**工作目录下**的 `.env`（已被 `.gitignore` 忽略）。要让密钥只留在 `.env`，就把启动命令固定到仓库目录——工作目录确定了 `.env` 才会被稳定加载，例如：
 >
 > ```json
 > {
 >   "mcpServers": {
 >     "gsearch": {
 >       "command": "/bin/zsh",
->       "args": ["-c", "cd /absolute/path/to/gsearch && exec node build/index.js"],
->       "env": { "LUDAO_ENABLED": "true" }
+>       "args": ["-c", "cd /absolute/path/to/gsearch && exec node build/index.js"]
 >     }
 >   }
 > }
 > ```
 >
-> 客户端若要求严格 JSON，`env` 里只放非密钥项；`LUDAO_TOKEN` 等留在 `.env`。下载目录同理：设了 `LUDAO_DOWNLOAD_DIR` 就落在指定绝对路径，否则是工作目录下的 `./downloads`。
+> 客户端若要求严格 JSON，`env` 里只放非密钥项，密钥留在 `.env`。
 
 > [!WARNING]
-> **不要把 API 密钥写进工具参数或聊天内容**。密钥只配置在客户端的 `env` 或密钥管理器中。两个 key 都可以留空——留空即进入相应层的 keyless 模式，服务器仍可正常启动。Library Layer 缺省不暴露：不设 `LUDAO_ENABLED` 即不注册其工具；要使用时将其设为开，没有 `LUDAO_TOKEN` 也能以访客身份检索与下载公开资料。
+> **不要把 API 密钥写进工具参数或聊天内容**。密钥只配置在客户端的 `env` 或密钥管理器中。两个 key 都可以留空——留空即进入相应层的 keyless 模式，服务器仍可正常启动。
 
 ---
 
@@ -244,10 +225,6 @@ npm run build
 | `FIRECRAWL_API_KEY` | 抓取 | 空 | 留空则抓取层走 keyless（限流且工具子集受限）。可用英文逗号分隔多个 key。到 [firecrawl.dev](https://www.firecrawl.dev/app/api-keys) 申请 |
 | `FIRECRAWL_API_URL` | 抓取 | 空 | 指向自托管 Firecrawl 实例 |
 | `KEY_ROTATION` | 搜索、抓取 | `sequential` | 配了多个 key 时怎么选：`sequential` 顺序消耗，`round-robin` 轮流取用；其他值按 `sequential` 处理并在启动日志提示 |
-| `LUDAO_ENABLED` | 资料 | 空（关） | 仅 `true` / `1` / `yes` / `on`（大小写不敏感）开启 Library Layer；未设置或空即不暴露该层 |
-| `LUDAO_TOKEN` | 资料 | 空 | 鹭岛书阁个人令牌，可选；无令牌以访客身份访问公开资料，令牌无效自动降级访客 |
-| `LUDAO_BASE_URL` | 资料 | 空（回落 `https://xmu.vintces.icu/api`） | 指向其他鹭岛书阁站点，空则用默认站点 |
-| `LUDAO_DOWNLOAD_DIR` | 资料 | 空（回落 `./downloads`） | 资料下载目录，相对服务器进程工作目录；单次调用可用 `ludao_download` 的 `output_dir` 覆盖 |
 
 复制 `.env.example` 为 `.env`，按需填写。
 
@@ -269,7 +246,6 @@ npm test             # 构建后运行 test/ 下的测试
 
 - [Tavily](https://tavily.com) — 搜索与内容抽取引擎
 - [Firecrawl](https://firecrawl.dev) — 网页抓取与站点遍历引擎
-- [鹭岛书阁](https://xmu.vintces.icu) — 学习资料检索与下载（Library Layer）
 - [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) — Model Context Protocol SDK
 - [axios](https://github.com/axios/axios) — HTTP 客户端
 - [dotenv](https://github.com/motdotla/dotenv) — 环境变量加载

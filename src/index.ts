@@ -20,29 +20,19 @@ import {
   FIRECRAWL_API_KEYS,
   KEY_ROTATION,
   KEY_ROTATION_INVALID,
-  LUDAO_ENABLED,
-  LUDAO_TOKEN,
   SEARCH_KEYLESS,
   SERVER_NAME,
   SERVER_VERSION,
   TAVILY_API_KEYS,
 } from "./config.js";
 import { crawlHandlers, crawlTools } from "./crawl/firecrawl.js";
-import { libraryHandlers, libraryTools } from "./library/ludao.js";
 import { searchHandlers, searchTools } from "./search/tavily.js";
 import type { ToolDefinition, ToolHandler } from "./types.js";
 
-// Library Layer is opt-in: LUDAO_ENABLED gates its tools at registration
-// time, so both `--list-tools` and listTools read the same array.
-const tools: ToolDefinition[] = [
-  ...searchTools,
-  ...crawlTools,
-  ...(LUDAO_ENABLED ? libraryTools : []),
-];
+const tools: ToolDefinition[] = [...searchTools, ...crawlTools];
 const handlers: Record<string, ToolHandler> = {
   ...searchHandlers,
   ...crawlHandlers,
-  ...(LUDAO_ENABLED ? libraryHandlers : {}),
 };
 
 if (process.argv.includes("--list-tools")) {
@@ -102,9 +92,7 @@ async function main(): Promise<void> {
     `[${SERVER_NAME}] running on stdio — search layer: ${keyMode(
       TAVILY_API_KEYS,
       SEARCH_KEYLESS,
-    )}, crawl layer: ${keyMode(FIRECRAWL_API_KEYS, CRAWL_KEYLESS)}, library layer: ${
-      LUDAO_ENABLED ? (LUDAO_TOKEN ? "keyed" : "guest") : "disabled"
-    }, key rotation: ${KEY_ROTATION}`,
+    )}, crawl layer: ${keyMode(FIRECRAWL_API_KEYS, CRAWL_KEYLESS)}, key rotation: ${KEY_ROTATION}`,
   );
 }
 

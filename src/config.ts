@@ -41,19 +41,6 @@ export const KEY_ROTATION_INVALID = ["", "sequential", "round-robin"].includes(
   ? ""
   : KEY_ROTATION_RAW;
 
-// Library layer (Ludao). Opt-in: only true/1/yes/on (any case) turn it on;
-// unset, empty, or any other value keeps the layer off.
-export const LUDAO_ENABLED = ["true", "1", "yes", "on"].includes(
-  process.env.LUDAO_ENABLED?.trim().toLowerCase() ?? "",
-);
-// Optional credential; empty means guest access to public materials.
-export const LUDAO_TOKEN = process.env.LUDAO_TOKEN?.trim() ?? "";
-// Empty override falls back to the default Ludao site.
-export const LUDAO_BASE_URL =
-  process.env.LUDAO_BASE_URL?.trim() || "https://xmu.vintces.icu/api";
-// Empty override falls back to ./downloads under the process working directory.
-export const LUDAO_DOWNLOAD_DIR = process.env.LUDAO_DOWNLOAD_DIR?.trim() || "./downloads";
-
 /** A layer runs keyless when it has no credential of its own. */
 export const SEARCH_KEYLESS = TAVILY_API_KEYS.length === 0;
 export const CRAWL_KEYLESS = FIRECRAWL_API_KEYS.length === 0 && FIRECRAWL_API_URL === "";
