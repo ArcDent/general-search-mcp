@@ -7,14 +7,18 @@
  *
  * Talks to the Tavily REST API directly over axios. Runs keyless when
  * TAVILY_API_KEY is absent (search/extract remain available, rate-limited).
+ * With several keys, each request goes through the key pool, which moves to
+ * the next key when Tavily rejects the current one (401/429/432/433).
  */
 import axios, { AxiosInstance } from "axios";
 import {
+  KEY_ROTATION,
   SEARCH_KEYLESS,
   SESSION_ID,
-  TAVILY_API_KEY,
+  TAVILY_API_KEYS,
   TAVILY_HUMAN_ID,
 } from "../config.js";
+import { KeyPool, parseRetryAfter, type KeyFailure } from "../keys.js";
 import {
   cleanParams,
   textResult,
@@ -35,7 +39,9 @@ const DOCS = {
 } as const;
 
 let axiosInstance: AxiosInstance | null = null;
+const pool = new KeyPool("Tavily", TAVILY_API_KEYS, KEY_ROTATION);
 
+/** Shared axios instance; the per-key Authorization header is added per request. */
 function client(): AxiosInstance {
   if (axiosInstance) return axiosInstance;
   axiosInstance = axios.create({
@@ -47,10 +53,7 @@ function client(): AxiosInstance {
             "X-Tavily-Access-Mode": "keyless",
             "X-Client-Source": "gsearch-keyless",
           }
-        : {
-            Authorization: `Bearer ${TAVILY_API_KEY}`,
-            "X-Client-Source": "gsearch",
-          }),
+        : { "X-Client-Source": "gsearch" }),
       "X-Session-Id": SESSION_ID,
       ...(TAVILY_HUMAN_ID ? { "X-Human-Id": TAVILY_HUMAN_ID } : {}),
     },
@@ -58,9 +61,26 @@ function client(): AxiosInstance {
   return axiosInstance;
 }
 
-/** Attach the api_key field only when running keyed. */
-function withKey(body: Record<string, unknown>): Record<string, unknown> {
-  return SEARCH_KEYLESS ? body : { ...body, api_key: TAVILY_API_KEY };
+/** Map an HTTP error to the key that caused it; network errors are not key failures. */
+function tavilyFailure(error: unknown): KeyFailure | undefined {
+  if (!axios.isAxiosError(error) || !error.response) return undefined;
+  return {
+    status: error.response.status,
+    retryAfterSec: parseRetryAfter(error.response.headers["retry-after"]),
+  };
+}
+
+/**
+ * POST through the key pool. Each attempt sends one key in both the
+ * Authorization header and the api_key field; keyless sends neither.
+ */
+function post(endpoint: string, body: Record<string, unknown>) {
+  return pool.run((key) => {
+    if (!key) return client().post(endpoint, body);
+    return client().post(endpoint, { ...body, api_key: key } as Record<string, unknown>, {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+  }, tavilyFailure);
 }
 
 function tavilyError(where: keyof typeof DOCS, error: unknown): ToolResult {
@@ -75,12 +95,12 @@ function tavilyError(where: keyof typeof DOCS, error: unknown): ToolResult {
     const detailStr =
       typeof detail === "object" ? JSON.stringify(detail) : String(detail);
     return textResult(
-      `Tavily ${where} error: ${detailStr}\nDocumentation: ${DOCS[where]}`,
+      pool.redact(`Tavily ${where} error: ${detailStr}\nDocumentation: ${DOCS[where]}`),
       true,
     );
   }
   return textResult(
-    `Tavily ${where} error: ${(error as Error).message}`,
+    pool.redact(`Tavily ${where} error: ${(error as Error).message}`),
     true,
   );
 }
@@ -281,29 +301,27 @@ function formatExtract(data: {
 
 const handleSearch: ToolHandler = async (args) => {
   try {
-    const body = cleanParams(
-      withKey({
-        query: args.query,
-        search_depth: args.search_depth,
-        topic: args.country ? "general" : args.topic,
-        time_range: args.time_range,
-        start_date: args.start_date,
-        end_date: args.end_date,
-        max_results: args.max_results,
-        include_images: args.include_images,
-        include_image_descriptions: args.include_image_descriptions,
-        include_raw_content: args.include_raw_content,
-        include_domains: args.include_domains,
-        exclude_domains: args.exclude_domains,
-        country: args.country,
-        include_favicon: args.include_favicon,
-      }),
-    );
+    const body = cleanParams({
+      query: args.query,
+      search_depth: args.search_depth,
+      topic: args.country ? "general" : args.topic,
+      time_range: args.time_range,
+      start_date: args.start_date,
+      end_date: args.end_date,
+      max_results: args.max_results,
+      include_images: args.include_images,
+      include_image_descriptions: args.include_image_descriptions,
+      include_raw_content: args.include_raw_content,
+      include_domains: args.include_domains,
+      exclude_domains: args.exclude_domains,
+      country: args.country,
+      include_favicon: args.include_favicon,
+    });
     // Tavily rejects time_range together with an explicit date window.
     if ((body.start_date || body.end_date) && body.time_range) {
       delete body.time_range;
     }
-    const res = await client().post(ENDPOINTS.search, body);
+    const res = await post(ENDPOINTS.search, body);
     return textResult(formatSearch(res.data));
   } catch (error) {
     return tavilyError("search", error);
@@ -312,17 +330,15 @@ const handleSearch: ToolHandler = async (args) => {
 
 const handleExtract: ToolHandler = async (args) => {
   try {
-    const body = cleanParams(
-      withKey({
-        urls: args.urls,
-        extract_depth: args.extract_depth,
-        format: args.format,
-        include_images: args.include_images,
-        include_favicon: args.include_favicon,
-        query: args.query,
-      }),
-    );
-    const res = await client().post(ENDPOINTS.extract, body);
+    const body = cleanParams({
+      urls: args.urls,
+      extract_depth: args.extract_depth,
+      format: args.format,
+      include_images: args.include_images,
+      include_favicon: args.include_favicon,
+      query: args.query,
+    });
+    const res = await post(ENDPOINTS.extract, body);
     return textResult(formatExtract(res.data));
   } catch (error) {
     return tavilyError("extract", error);

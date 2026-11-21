@@ -17,6 +17,7 @@
     "watch": "tsc --watch",
     "start": "node build/index.js",
     "list-tools": "node build/index.js --list-tools",
+    "test": "npm run build && node --test",
     "inspector": "npx @modelcontextprotocol/inspector build/index.js",
     "prepare": "npm run build"
   },

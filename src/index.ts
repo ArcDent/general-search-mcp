@@ -17,11 +17,15 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import {
   CRAWL_KEYLESS,
+  FIRECRAWL_API_KEYS,
+  KEY_ROTATION,
+  KEY_ROTATION_INVALID,
   LUDAO_ENABLED,
   LUDAO_TOKEN,
   SEARCH_KEYLESS,
   SERVER_NAME,
   SERVER_VERSION,
+  TAVILY_API_KEYS,
 } from "./config.js";
 import { crawlHandlers, crawlTools } from "./crawl/firecrawl.js";
 import { libraryHandlers, libraryTools } from "./library/ludao.js";
@@ -79,15 +83,28 @@ process.on("SIGINT", async () => {
   process.exit(0);
 });
 
+/** Startup label for a layer: key count only, never the keys themselves. */
+function keyMode(keys: string[], keyless: boolean): string {
+  if (keyless) return "keyless";
+  if (keys.length === 0) return "self-hosted, no key";
+  return `keyed (${keys.length} key${keys.length > 1 ? "s" : ""})`;
+}
+
 async function main(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
+  if (KEY_ROTATION_INVALID) {
+    console.error(
+      `[${SERVER_NAME}] KEY_ROTATION "${KEY_ROTATION_INVALID}" is not recognised (use sequential or round-robin); using sequential`,
+    );
+  }
   console.error(
-    `[${SERVER_NAME}] running on stdio — search layer: ${
-      SEARCH_KEYLESS ? "keyless" : "keyed"
-    }, crawl layer: ${CRAWL_KEYLESS ? "keyless" : "keyed"}, library layer: ${
+    `[${SERVER_NAME}] running on stdio — search layer: ${keyMode(
+      TAVILY_API_KEYS,
+      SEARCH_KEYLESS,
+    )}, crawl layer: ${keyMode(FIRECRAWL_API_KEYS, CRAWL_KEYLESS)}, library layer: ${
       LUDAO_ENABLED ? (LUDAO_TOKEN ? "keyed" : "guest") : "disabled"
-    }`,
+    }, key rotation: ${KEY_ROTATION}`,
   );
 }
 

@@ -52,6 +52,17 @@ gsearch 是一个基于 [Model Context Protocol](https://modelcontextprotocol.io
 
 搜索层与抓取层各自判断有无密钥，可以一个有密钥、一个无密钥同时运行，互不影响。缺密钥的层自动进入 keyless 模式（有速率限制），服务器照常启动。
 
+### 多 key 轮换
+
+`TAVILY_API_KEY` 和 `FIRECRAWL_API_KEY` 都可以用英文逗号写多个 key，例如 `tvly-aaa,tvly-bbb`。只写一个 key 时行为和以前一样。
+
+- **怎么选 key**：`KEY_ROTATION` 决定，两层共用。默认 `sequential` 一直用排在最前面的可用 key，出问题才换下一个，适合主 key 加备用 key，或免费 key 在前、付费 key 兜底；设成 `round-robin` 则每次调用换下一个 key，把用量平摊到各 key。
+- **什么时候换 key**：上游返回 401 时，这个 key 在本次进程里不再使用；402、432、433 表示额度用完，这个 key 歇 1 小时；429 表示请求太快，按上游给的 `Retry-After` 歇，没给就从 60 秒起翻倍，最长 1 小时，这个 key 成功一次后再遇到 429 又从 60 秒算起。同一次调用里会立刻换下一个 key 重试，每个 key 最多试一次。其他错误不换 key，直接返回。
+- **全部不可用时**：直接报错，写明几个 key 被停用、几个在冷却、最早多少秒后可重试，不会悄悄退回 keyless。报错和日志里只出现 key 的序号，不出现 key 本身。
+- **`crawl` 不会重复建作业**：作业建好之后的轮询出错时只记下这个 key 的状态，不换 key 重新建作业，报错里带上作业 ID。
+- 同一账号下的多个 key 通常共享额度，轮换只能叠加不同账号的额度。
+- 多个 key 只写在本服务器的 `env` 或项目的 `.env` 里，不要导出到全局 shell 环境，否则同一终端里其他读 `FIRECRAWL_API_KEY` 的工具会读到整串逗号分隔的值。
+
 Library Layer 没有 keyless 模式：要么不暴露（`LUDAO_ENABLED` 关闭），要么在开启后以访客身份访问鹭岛书阁的公开资料（可搜索、可下载）。令牌无效或已吊销时同样降级为访客，不会报错。
 
 ---
@@ -63,6 +74,7 @@ gsearch/
 ├── src/
 │   ├── index.ts            # 入口：注册全部工具、stdio 传输、--list-tools
 │   ├── config.ts           # 环境变量与凭据解析（密钥只在此处出现一次）
+│   ├── keys.ts             # 多 key 轮换：选 key、冷却、报错打码
 │   ├── types.ts            # 共享工具契约 + cleanParams / truncate
 │   ├── search/
 │   │   └── tavily.ts       # 搜索层：search、extract
@@ -70,6 +82,7 @@ gsearch/
 │   │   └── firecrawl.ts    # 抓取层：scrape、crawl、map
 │   └── library/
 │       └── ludao.ts        # Library Layer（可选）：ludao_search、ludao_resource、ludao_download
+├── test/                   # node:test 测试，跑编译后的 build/
 ├── docs/
 │   └── adr/                # 架构决策记录
 ├── CONTEXT.md              # 项目 ubiquitous language
@@ -100,6 +113,7 @@ gsearch/
 | **`--list-tools`** | 一条命令列出当前注册的全部工具与说明，不必先接客户端；门控开关增减后列表随之变化 |
 | **Library Layer 可选** | Library Layer 由鹭岛书阁（Ludao）驱动，按 `LUDAO_ENABLED` 显式开启，缺省不暴露；无令牌以访客身份访问公开资料 |
 | **分层独立降级** | 搜索层与抓取层各自判断密钥，可一个 keyed 一个 keyless；Library Layer 无 keyless 变体，只在「不暴露」与 Guest mode 间切换 |
+| **多 key 轮换** | 每层可配多个 key，被拒绝或额度用完时自动换下一个；`KEY_ROTATION` 选顺序消耗或轮流取用 |
 
 ### 工程细节
 
@@ -225,10 +239,11 @@ npm run build
 
 | 变量 | 层 | 默认值 | 说明 |
 |:-----|:---|:-------|:-----|
-| `TAVILY_API_KEY` | 搜索 | 空 | 留空则搜索层走 keyless（限流）。到 [app.tavily.com](https://app.tavily.com/home) 申请 |
+| `TAVILY_API_KEY` | 搜索 | 空 | 留空则搜索层走 keyless（限流）。可用英文逗号分隔多个 key。到 [app.tavily.com](https://app.tavily.com/home) 申请 |
 | `TAVILY_HUMAN_ID` | 搜索 | 空 | 转发为 `X-Human-Id` 请求头，用于按用户分析 |
-| `FIRECRAWL_API_KEY` | 抓取 | 空 | 留空则抓取层走 keyless（限流且工具子集受限）。到 [firecrawl.dev](https://www.firecrawl.dev/app/api-keys) 申请 |
+| `FIRECRAWL_API_KEY` | 抓取 | 空 | 留空则抓取层走 keyless（限流且工具子集受限）。可用英文逗号分隔多个 key。到 [firecrawl.dev](https://www.firecrawl.dev/app/api-keys) 申请 |
 | `FIRECRAWL_API_URL` | 抓取 | 空 | 指向自托管 Firecrawl 实例 |
+| `KEY_ROTATION` | 搜索、抓取 | `sequential` | 配了多个 key 时怎么选：`sequential` 顺序消耗，`round-robin` 轮流取用；其他值按 `sequential` 处理并在启动日志提示 |
 | `LUDAO_ENABLED` | 资料 | 空（关） | 仅 `true` / `1` / `yes` / `on`（大小写不敏感）开启 Library Layer；未设置或空即不暴露该层 |
 | `LUDAO_TOKEN` | 资料 | 空 | 鹭岛书阁个人令牌，可选；无令牌以访客身份访问公开资料，令牌无效自动降级访客 |
 | `LUDAO_BASE_URL` | 资料 | 空（回落 `https://xmu.vintces.icu/api`） | 指向其他鹭岛书阁站点，空则用默认站点 |
@@ -245,6 +260,7 @@ npm run watch        # tsc --watch 监听编译
 npm run inspector    # 用 @modelcontextprotocol/inspector 调试 build/index.js
 npm run list-tools   # 列出全部工具
 npm run build        # 重新构建
+npm test             # 构建后运行 test/ 下的测试
 ```
 
 ---

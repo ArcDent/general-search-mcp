@@ -8,14 +8,18 @@
  *
  * Uses the official Firecrawl JS SDK (@mendable/firecrawl-js). The SDK resolves
  * FIRECRAWL_API_KEY / FIRECRAWL_API_URL from the environment; we pass them
- * explicitly so credential handling stays in one place.
+ * explicitly so credential handling stays in one place. With several keys,
+ * each request goes through the key pool, which moves to the next key when
+ * Firecrawl rejects the current one (401/402/429).
  */
 import { Firecrawl } from "@mendable/firecrawl-js";
 import {
   CRAWL_KEYLESS,
-  FIRECRAWL_API_KEY,
+  FIRECRAWL_API_KEYS,
   FIRECRAWL_API_URL,
+  KEY_ROTATION,
 } from "../config.js";
+import { KeyPool, type KeyFailure } from "../keys.js";
 import {
   cleanParams,
   textResult,
@@ -25,23 +29,51 @@ import {
   type ToolResult,
 } from "../types.js";
 
-let firecrawl: Firecrawl | null = null;
+const clients = new Map<string, Firecrawl>();
+const pool = new KeyPool("Firecrawl", FIRECRAWL_API_KEYS, KEY_ROTATION);
 
-function client(): Firecrawl {
-  if (firecrawl) return firecrawl;
-  const options: { apiKey?: string; apiUrl?: string } = {};
-  if (FIRECRAWL_API_KEY) options.apiKey = FIRECRAWL_API_KEY;
-  if (FIRECRAWL_API_URL) options.apiUrl = FIRECRAWL_API_URL;
-  firecrawl = new Firecrawl(options);
-  return firecrawl;
+/**
+ * One SDK client per key ("" when keyless or self-hosted without a key).
+ * apiKey is always passed, even as "": the SDK falls back to reading
+ * process.env.FIRECRAWL_API_KEY itself, which may hold the raw
+ * comma-separated key list.
+ */
+function client(key: string): Firecrawl {
+  let instance = clients.get(key);
+  if (!instance) {
+    instance = new Firecrawl({
+      apiKey: key,
+      ...(FIRECRAWL_API_URL ? { apiUrl: FIRECRAWL_API_URL } : {}),
+    });
+    clients.set(key, instance);
+  }
+  return instance;
+}
+
+/** SDK errors carry the HTTP status; anything without one is not a key failure. */
+function firecrawlFailure(error: unknown): KeyFailure | undefined {
+  const status = (error as { status?: unknown } | null)?.status;
+  return typeof status === "number" ? { status } : undefined;
+}
+
+/** The crawl job id the SDK attaches to errors raised after the job started. */
+function jobIdOf(error: unknown): string | undefined {
+  const jobId = (error as { jobId?: unknown } | null)?.jobId;
+  return typeof jobId === "string" ? jobId : undefined;
 }
 
 function firecrawlError(where: string, error: unknown): ToolResult {
   const message = error instanceof Error ? error.message : String(error);
+  const jobId = jobIdOf(error);
   const hint = CRAWL_KEYLESS
     ? "\nHint: the crawl layer is running keyless. Set FIRECRAWL_API_KEY (get one free at https://firecrawl.dev) or FIRECRAWL_API_URL for a self-hosted instance."
     : "";
-  return textResult(`Firecrawl ${where} error: ${message}${hint}`, true);
+  return textResult(
+    pool.redact(
+      `Firecrawl ${where} error${jobId ? ` (job ${jobId})` : ""}: ${message}${hint}`,
+    ),
+    true,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -285,7 +317,10 @@ const handleScrape: ToolHandler = async (args) => {
     const { url, ...rest } = args;
     const options = cleanParams(rest);
     // Cast at the SDK boundary: options are validated by Firecrawl server-side.
-    const doc = await client().scrape(String(url), options as never);
+    const doc = await pool.run(
+      (key) => client(key).scrape(String(url), options as never),
+      firecrawlFailure,
+    );
     return textResult(formatScrape(doc as FcDocument));
   } catch (error) {
     return firecrawlError("scrape", error);
@@ -296,7 +331,17 @@ const handleCrawl: ToolHandler = async (args) => {
   try {
     const { url, ...rest } = args;
     const options = cleanParams(rest);
-    const job = await client().crawl(String(url), options as never);
+    // A crawl job belongs to the key that started it. Errors raised while
+    // polling carry the job id: they still bench the key, but never restart
+    // the job under another key, which would run and bill the crawl twice.
+    // Relies on SdkError.jobId (checked against SDK 4.35.0).
+    const job = await pool.run(
+      (key) => client(key).crawl(String(url), options as never),
+      (error) => {
+        const failure = firecrawlFailure(error);
+        return failure && { ...failure, noRetry: jobIdOf(error) !== undefined };
+      },
+    );
     return textResult(formatCrawl(job as never));
   } catch (error) {
     return firecrawlError("crawl", error);
@@ -307,7 +352,10 @@ const handleMap: ToolHandler = async (args) => {
   try {
     const { url, ...rest } = args;
     const options = cleanParams(rest);
-    const data = await client().map(String(url), options as never);
+    const data = await pool.run(
+      (key) => client(key).map(String(url), options as never),
+      firecrawlFailure,
+    );
     return textResult(formatMap(data as never));
   } catch (error) {
     return firecrawlError("map", error);
