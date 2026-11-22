@@ -1,191 +1,110 @@
-<!-- markdownlint-disable -->
-
-<p align="center">
-  <pre>
- ██████╗  ███████╗ ███████╗  █████╗  ██████╗   ██████╗  ██╗  ██╗
-██╔════╝  ██╔════╝ ██╔════╝ ██╔══██╗ ██╔══██╗ ██╔════╝  ██║  ██║
-██║  ███╗ ███████╗ ███████╗ ███████║ ██████╔╝ ██║       ███████║
-██║   ██║ ╚════██║ ██╔══╝   ██╔══██║ ██╔══██╗ ██║       ██╔══██║
-╚██████╔╝ ███████║ ███████╗ ██║  ██║ ██║  ██║ ╚██████╗  ██║  ██║
- ╚═════╝  ╚══════╝ ╚══════╝ ╚═╝  ╚═╝ ╚═╝  ╚═╝  ╚═════╝  ╚═╝  ╚═╝
-          Unified Web Search & Crawl MCP Server
-  </pre>
-</p>
-
 <div align="center">
 
-![Node](https://img.shields.io/badge/Node.js-%3E%3D20-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
-![MCP](https://img.shields.io/badge/MCP-Protocol-8A2BE2?style=for-the-badge)
-![Search](https://img.shields.io/badge/Search-Tavily-7C3AED?style=for-the-badge)
-![Crawl](https://img.shields.io/badge/Crawl-Firecrawl-F97316?style=for-the-badge)
-![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
-![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue?style=for-the-badge)
+# gsearch
 
-**✨ 一个进程，5 个工具，搜索与抓取合二为一 ✨**
+**一个服务配齐联网搜索和网页抓取，只留 5 个最常用的工具**
 
-基于 MCP stdio 的单一服务器，直连 Tavily REST API 与 Firecrawl JS SDK
-
-[✨ 功能特性](#-功能特性) • [🛠 MCP 工具](#-mcp-工具) • [🚀 快速开始](#-快速开始) • [🔌 接入客户端](#-接入-mcp-客户端) • [🔑 环境变量](#-环境变量)
+![Node](https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=nodedotjs&logoColor=white)
+![MCP](https://img.shields.io/badge/MCP-stdio-8A2BE2)
+![License](https://img.shields.io/badge/License-MIT-green)
 
 </div>
 
----
+## 能做什么
 
-## 项目简介
+| 你对 AI 说 | 它会调用 | 由谁提供 |
+|:-----------|:---------|:---------|
+| 「查一下最近关于某某的新闻」 | `search`：联网搜索 | Tavily |
+| 「读一下这几个网页 https://...」 | `extract`：读取已知网址的正文 | Tavily |
+| 「把这个页面转成 markdown」 | `scrape`：抓取单个网页 | Firecrawl |
+| 「这个文档站都有哪些页面？」 | `map`：列出站点的网址 | Firecrawl |
+| 「把这个文档站的教程部分都抓下来」 | `crawl`：批量抓取多个页面 | Firecrawl |
 
-gsearch 是一个基于 [Model Context Protocol](https://modelcontextprotocol.io) 的单一服务器，把两类能力合并到同一套工具接口：
+## 开始之前
 
-| 能力 | 引擎 | 默认状态 |
-|:-----|:-----|:---------|
-| **网页搜索** | [Tavily](https://tavily.com) | 开启 |
-| **网页抓取** | [Firecrawl](https://firecrawl.dev) | 开启 |
+- 装好 [Node.js](https://nodejs.org) 20 或更高版本，终端里运行 `node -v` 可以查看
+- 一个支持 MCP 的客户端，比如 Claude Code、Cursor、Claude Desktop
+- API key 可以先不准备，搜索功能不填 key 也能试
 
-服务器是一个自包含进程，直接调用两个引擎的 API，不代理、不 fork 独立的 `tavily-mcp` 或 `firecrawl-mcp` 服务。
-
-鹭岛书阁的资料检索与下载已移到 [`ludao` 分支](https://github.com/ArcDent/general-search-mcp/tree/ludao)，主分支不再包含，需要时切换到该分支使用。
-
-> [!NOTE]
-> **为什么重写而不是代理**：同时跑 `tavily-mcp` 和 `firecrawl-mcp` 需要两个进程、两条 stdio 通道和两份配置。本项目直接实现（[ADR-0001](docs/adr/0001-unify-search-crawl-reimplement.md)），统一工具命名、参数清洗与输出截断。
-
-### 双层独立降级
-
-搜索层与抓取层各自判断有无密钥，可以一个有密钥、一个无密钥同时运行，互不影响。缺密钥的层自动进入 keyless 模式（有速率限制），服务器照常启动。
-
-### 多 key 轮换
-
-`TAVILY_API_KEY` 和 `FIRECRAWL_API_KEY` 都可以用英文逗号写多个 key，例如 `tvly-aaa,tvly-bbb`。只写一个 key 时行为和以前一样。
-
-- **怎么选 key**：`KEY_ROTATION` 决定，两层共用。默认 `sequential` 一直用排在最前面的可用 key，出问题才换下一个，适合主 key 加备用 key，或免费 key 在前、付费 key 兜底；设成 `round-robin` 则每次调用换下一个 key，把用量平摊到各 key。
-- **什么时候换 key**：上游返回 401 时，这个 key 在本次进程里不再使用；402、432、433 表示额度用完，这个 key 歇 1 小时；429 表示请求太快，按上游给的 `Retry-After` 歇，没给就从 60 秒起翻倍，最长 1 小时，这个 key 成功一次后再遇到 429 又从 60 秒算起。同一次调用里会立刻换下一个 key 重试，每个 key 最多试一次。其他错误不换 key，直接返回。
-- **全部不可用时**：直接报错，写明几个 key 被停用、几个在冷却、最早多少秒后可重试，不会悄悄退回 keyless。报错和日志里只出现 key 的序号，不出现 key 本身。
-- **`crawl` 不会重复建作业**：作业建好之后的轮询出错时只记下这个 key 的状态，不换 key 重新建作业，报错里带上作业 ID。
-- 同一账号下的多个 key 通常共享额度，轮换只能叠加不同账号的额度。
-- 多个 key 只写在本服务器的 `env` 或项目的 `.env` 里，不要导出到全局 shell 环境，否则同一终端里其他读 `FIRECRAWL_API_KEY` 的工具会读到整串逗号分隔的值。
-
----
-
-## 📁 项目结构
-
-```
-gsearch/
-├── src/
-│   ├── index.ts            # 入口：注册全部工具、stdio 传输、--list-tools
-│   ├── config.ts           # 环境变量与凭据解析（密钥只在此处出现一次）
-│   ├── keys.ts             # 多 key 轮换：选 key、冷却、报错打码
-│   ├── types.ts            # 共享工具契约 + cleanParams / truncate
-│   ├── search/
-│   │   └── tavily.ts       # 搜索层：search、extract
-│   └── crawl/
-│       └── firecrawl.ts    # 抓取层：scrape、crawl、map
-├── test/                   # node:test 测试，跑编译后的 build/
-├── docs/
-│   └── adr/                # 架构决策记录
-├── CONTEXT.md              # 项目 ubiquitous language
-├── .env.example            # 环境变量模板
-└── package.json
-```
-
----
-
-## ✅ 前置环境
-
-| 依赖 | 版本 | 说明 |
-|:-----|:-----|:-----|
-| **Node.js** | ≥ 20 | 开发环境为 Node 22（`@types/node` ^22） |
-| **npm** | 随 Node 附带 | 安装依赖与构建 |
-
----
-
-## ✨ 功能特性
-
-### 核心功能
-
-| 功能 | 描述 |
-|:-----|:-----|
-| **5 个 MCP 工具** | 搜索 2 个（`search`、`extract`）+ 抓取 3 个（`scrape`、`crawl`、`map`） |
-| **单进程自包含** | 直连两个引擎，不代理外部 MCP 服务，没有第二条 stdio 通道 |
-| **标准 stdio 传输** | MCP over stdio，兼容 Cursor / Claude Desktop 等主流客户端 |
-| **`--list-tools`** | 一条命令列出全部工具与说明，不必先接客户端 |
-| **双层独立降级** | 搜索层与抓取层各自判断密钥，可一个 keyed 一个 keyless |
-| **多 key 轮换** | 每层可配多个 key，被拒绝或额度用完时自动换下一个；`KEY_ROTATION` 选顺序消耗或轮流取用 |
-
-### 工程细节
-
-| 特性 | 描述 |
-|:-----|:-----|
-| **空值清洗** | 空字符串、`null`、空数组在发往引擎前统一剔除，避免把空参数当成筛选条件 |
-| **输出截断** | 正文超长自动截断并标注被截字数：`crawl` 每页 1500、`search` 原文 4000、`extract` 12000、`scrape` 20000 字符 |
-| **密钥零散落** | 凭据只在 `config.ts` 解析一次，其余模块读导出的常量 |
-| **TypeScript 严格模式** | `strict: true`，工具契约全量类型化 |
-
----
-
-## 🛠 MCP 工具
-
-| 工具名 | 引擎 | 作用 | 必填参数 |
-|:-------|:-----|:-----|:---------|
-| `search` | Tavily | 联网搜索，返回带摘要与 URL 的排序结果 | `query` |
-| `extract` | Tavily | 读取一个或多个已知 URL 的正文内容 | `urls` |
-| `scrape` | Firecrawl | 抓取单个已知页面为 markdown 等格式 | `url` |
-| `crawl` | Firecrawl | 从根 URL 遍历站点，轮询至任务完成 | `url` |
-| `map` | Firecrawl | 枚举站点可发现的 URL，不取正文 | `url` |
-
-### 常用可选参数
-
-| 工具 | 参数 | 说明 |
-|:-----|:-----|:-----|
-| `search` | `search_depth` | `basic`（默认）/ `advanced` / `fast` / `ultra-fast` |
-| `search` | `topic` | `general`（默认）/ `news` |
-| `search` | `time_range` | `day` / `week` / `month` / `year`，也可用 `start_date` / `end_date`（`YYYY-MM-DD`） |
-| `search` | `max_results` | 1–20，默认 5 |
-| `search` | `include_domains` / `exclude_domains` | 限定或排除域名 |
-| `search` | `country` | 按国家加权（仅 `topic=general`），如 `Japan` |
-| `extract` | `extract_depth` | `basic`（默认）/ `advanced`（受保护站点、表格） |
-| `extract` | `format` | `markdown`（默认）/ `text` |
-| `scrape` | `formats` | 如 `["markdown"]`、`["links"]`、`["screenshot"]` |
-| `scrape` | `onlyMainContent` | 默认 `true`，剥掉导航与页脚 |
-| `crawl` | `limit` | 最大抓取页数，默认 20 |
-| `crawl` | `sitemap` | `include` / `skip` / `only` |
-| `crawl` | `includePaths` / `excludePaths` | 正则路径过滤，如 `/docs/.*` |
-| `map` | `search` | 按关键词过滤发现的 URL |
-
-列出全部工具与说明：
+## 第 1 步：下载并安装
 
 ```bash
-npm run list-tools
-```
-
----
-
-## 🚀 快速开始
-
-```bash
-# 克隆仓库
 git clone https://github.com/ArcDent/general-search-mcp.git
 cd general-search-mcp
-
-# 安装依赖（prepare 脚本会顺带构建）
 npm install
-
-# 或手动重新构建
-npm run build
+npm run list-tools   # 能列出 5 个工具就装好了
 ```
 
-构建产物为 `build/index.js`，`package.json` 的 `bin` 已注册为 `gsearch`。
+## 第 2 步：接入客户端
 
----
+下面的 `/你的路径` 换成仓库的完整路径，在仓库目录运行 `pwd` 就能看到。点开你用的客户端：
 
-## 🔌 接入 MCP 客户端
+<details>
+<summary><b>Claude Code</b></summary>
 
-在客户端的 MCP 配置中加入：
+```bash
+claude mcp add gsearch -- node /你的路径/general-search-mcp/build/index.js
+```
+
+</details>
+
+<details>
+<summary><b>Cursor</b></summary>
+
+编辑 `~/.cursor/mcp.json`。只想在某个项目里用，就编辑那个项目的 `.cursor/mcp.json`：
 
 ```json
 {
   "mcpServers": {
     "gsearch": {
       "command": "node",
-      "args": ["/absolute/path/to/gsearch/build/index.js"],
+      "args": ["/你的路径/general-search-mcp/build/index.js"]
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Claude Desktop</b></summary>
+
+打开「设置 → 开发者 → 编辑配置」，会打开 `claude_desktop_config.json`，加入和 Cursor 一样的那段 JSON。保存后重启 Claude Desktop。
+
+</details>
+
+<details>
+<summary><b>其他客户端</b></summary>
+
+大多数客户端都用同样的 JSON 格式。找到它的 MCP 配置文件，加入 Cursor 那段即可；找不到配置文件时，看客户端自己的文档。
+
+</details>
+
+> [!TIP]
+> Windows 上 JSON 里的路径写成 `C:/Users/...`，或者把每个反斜杠写成两个 `\\`。
+
+## 第 3 步：试一下
+
+重启客户端，对 AI 说「搜一下今天的科技新闻」。能返回带链接的搜索结果，就说明接好了。
+
+## 第 4 步（可选）：填上 key
+
+| 工具 | 不填 key | 填了 key |
+|:-----|:---------|:---------|
+| `search`、`extract` | 能用，每天有次数上限 | 按 Tavily 套餐的额度 |
+| `scrape` | 能用，会限速；开着 VPN 或代理时可能被拒 | 按 Firecrawl 套餐的额度 |
+| `crawl`、`map` | 用不了 | 按 Firecrawl 套餐的额度 |
+
+两家都可以免费注册申请 key，免费额度以官网为准：[Tavily](https://app.tavily.com/home)、[Firecrawl](https://www.firecrawl.dev/app/api-keys)。可以只填一个。
+
+拿到后在配置里加上 `env`。Claude Code 用户先运行 `claude mcp remove gsearch`，再在 `claude mcp add gsearch` 后面加上 `-e TAVILY_API_KEY=tvly-...` 重新添加。
+
+```json
+{
+  "mcpServers": {
+    "gsearch": {
+      "command": "node",
+      "args": ["/你的路径/general-search-mcp/build/index.js"],
       "env": {
         "TAVILY_API_KEY": "tvly-...",
         "FIRECRAWL_API_KEY": "fc-..."
@@ -195,69 +114,37 @@ npm run build
 }
 ```
 
-> [!NOTE]
-> **凭据放 `.env`，客户端配置里不写密钥**：服务器用 dotenv 读取**工作目录下**的 `.env`（已被 `.gitignore` 忽略）。要让密钥只留在 `.env`，就把启动命令固定到仓库目录——工作目录确定了 `.env` 才会被稳定加载，例如：
->
-> ```json
-> {
->   "mcpServers": {
->     "gsearch": {
->       "command": "/bin/zsh",
->       "args": ["-c", "cd /absolute/path/to/gsearch && exec node build/index.js"]
->     }
->   }
-> }
-> ```
->
-> 客户端若要求严格 JSON，`env` 里只放非密钥项，密钥留在 `.env`。
-
 > [!WARNING]
-> **不要把 API 密钥写进工具参数或聊天内容**。密钥只配置在客户端的 `env` 或密钥管理器中。两个 key 都可以留空——留空即进入相应层的 keyless 模式，服务器仍可正常启动。
+> key 只写在客户端配置里，不要发到聊天里，也不要提交到 git。
 
----
+## 和官方 MCP 有什么不同
 
-## 🔑 环境变量
+Tavily 和 Firecrawl 都有官方 MCP 服务器：[tavily-mcp](https://github.com/tavily-ai/tavily-mcp) 和 [firecrawl-mcp](https://github.com/firecrawl/firecrawl-mcp-server)。两个一起装功能最全，但要配两个服务；搜索、读网页、抓整站、列网址这几类工具两边各有一套，工具列表也长得多。
 
-| 变量 | 层 | 默认值 | 说明 |
-|:-----|:---|:-------|:-----|
-| `TAVILY_API_KEY` | 搜索 | 空 | 留空则搜索层走 keyless（限流）。可用英文逗号分隔多个 key。到 [app.tavily.com](https://app.tavily.com/home) 申请 |
-| `TAVILY_HUMAN_ID` | 搜索 | 空 | 转发为 `X-Human-Id` 请求头，用于按用户分析 |
-| `FIRECRAWL_API_KEY` | 抓取 | 空 | 留空则抓取层走 keyless（限流且工具子集受限）。可用英文逗号分隔多个 key。到 [firecrawl.dev](https://www.firecrawl.dev/app/api-keys) 申请 |
-| `FIRECRAWL_API_URL` | 抓取 | 空 | 指向自托管 Firecrawl 实例 |
-| `KEY_ROTATION` | 搜索、抓取 | `sequential` | 配了多个 key 时怎么选：`sequential` 顺序消耗，`round-robin` 轮流取用；其他值按 `sequential` 处理并在启动日志提示 |
+gsearch 把两边最常用的能力合成 5 个不重复的工具，一个服务、一份配置，还自带多 key 轮换和返回长度限制，免得把对话撑爆。
 
-复制 `.env.example` 为 `.env`，按需填写。
+这些需求 gsearch 不做，请直接用官方 MCP：
 
----
+- 让 AI 写深度调研报告
+- 让 AI 操作网页，比如点击、输入
+- 按指定字段从网页里抽取结构化数据
+- 定期监控网页变化
+- 抓取页数很多的大站点：gsearch 的 `crawl` 要等全部抓完才返回，可能超过客户端的等待时间
 
-## 🧰 开发命令
+## 常见问题
 
-```bash
-npm run watch        # tsc --watch 监听编译
-npm run inspector    # 用 @modelcontextprotocol/inspector 调试 build/index.js
-npm run list-tools   # 列出全部工具
-npm run build        # 重新构建
-npm test             # 构建后运行 test/ 下的测试
-```
+**客户端里看不到 gsearch 的工具？**
+先在仓库目录运行 `npm run list-tools` 确认装好了，再检查配置里的路径是不是完整路径。改完配置要重启客户端。
 
----
+**怎么确认 key 生效了？**
+看客户端的 MCP 日志，启动时有一行 `search layer: keyed (1 key)`。显示 `keyless` 就是没读到 key。
 
-## 🙏 致谢
+**返回的内容被截断了？**
+为了不撑爆对话，每个工具都有返回长度上限，具体数字见[工具参数](docs/tools.md)。
 
-- [Tavily](https://tavily.com) — 搜索与内容抽取引擎
-- [Firecrawl](https://firecrawl.dev) — 网页抓取与站点遍历引擎
-- [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) — Model Context Protocol SDK
-- [axios](https://github.com/axios/axios) — HTTP 客户端
-- [dotenv](https://github.com/motdotla/dotenv) — 环境变量加载
+## 更多文档
 
----
-
-<div align="center">
-
-**Made with ❤️ by [ArcDent](https://github.com/ArcDent)**
-
-**Star ⭐ 如果这个项目对你有帮助！**
-
-</div>
-
-<!-- markdownlint-restore -->
+- [工具参数](docs/tools.md)：每个工具的全部参数，以及返回内容的长度上限
+- [配置说明](docs/configuration.md)：全部环境变量、用 `.env` 存 key、多 key 轮换、连接自己部署的 Firecrawl
+- [开发指南与设计取舍](CONTRIBUTING.md)：开发命令、项目结构、为什么这样设计
+- 鹭岛书阁的资料检索在 [`ludao` 分支](https://github.com/ArcDent/general-search-mcp/tree/ludao)
